@@ -9,3 +9,6 @@ dist
 # private strategy notes: never publish
 CRC_HACKS_MASTER_DOSSIER.md
 .env*
+
+# large media (share via Drive/YouTube instead)
+submission/*.mp4

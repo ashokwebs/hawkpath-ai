@@ -1,0 +1,17 @@
+2.7s  Landing: hero
+8.3s  Landing: live College Scorecard data
+13.8s  Landing: For colleges (illustrative preview)
+18.8s  Landing: pricing
+26.1s  Dashboard: overview (Ashok demo student)
+29.9s  Graph: hover CISP 400 to trace its chain
+34.8s  Advisor: ask what-if (fail CISP 400 + 30h work)
+43.3s  Advisor: answer + graph redraws
+46.6s  Advisor: open tool-call trace
+52.5s  Advisor: compare schools question
+62.1s  Compare transfer options table (live federal data)
+72.5s  Simulator: drag work-hours slider (instant, no AI)
+78.7s  Transcript import: open "Add my classes"
+85.1s  Transcript import: upload sample transcript (AI reads it)
+94.1s  Transcript import: save → personal plan
+100.7s  Counselor-ready report
+110.3s  End
