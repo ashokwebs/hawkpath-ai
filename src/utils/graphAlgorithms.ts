@@ -1,5 +1,5 @@
-import { Course, DAGNode, DAGEdge, PlannedSemester, SimulationResult, ArticulationTarget, StudentProfile } from '../types';
-import { COURSE_MAP, CRC_COURSES } from '../data/crcCurriculum';
+import { Course, DAGNode, DAGEdge, PlannedSemester, SimulationResult, ArticulationTarget, StudentProfile } from '../types/index.js';
+import { COURSE_MAP, CRC_COURSES } from '../data/crcCurriculum.js';
 
 /** First term the planner schedules (the next full term after Fall 2026). */
 export const PLAN_START_YEAR = 2027;

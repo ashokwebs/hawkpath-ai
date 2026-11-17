@@ -3,10 +3,10 @@
  * + JSON-schema structured output. Output is then re-validated against the CRC
  * catalog so hallucinated course codes are dropped, never trusted.
  */
-import { COURSE_MAP } from '../src/data/crcCurriculum';
-import { normalizeCourseCode } from '../src/utils/scenario';
-import { takeToken } from './ratelimit';
-import { apiKey, generate, describeError } from './gemini';
+import { COURSE_MAP } from '../src/data/crcCurriculum.js';
+import { normalizeCourseCode } from '../src/utils/scenario.js';
+import { takeToken } from './ratelimit.js';
+import { apiKey, generate, describeError } from './gemini.js';
 import { ApiError } from '@google/genai';
 
 const MAX_BYTES = 4_500_000; // ~4.5MB decoded

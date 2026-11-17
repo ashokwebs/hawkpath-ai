@@ -1,4 +1,4 @@
-import { route, ROUTES, SECURITY_HEADERS } from './routes';
+import { route, ROUTES, SECURITY_HEADERS } from './routes.js';
 
 /** Adapts the shared route handlers to Vercel's Node function signature. */
 export function vercelHandler(path: string) {

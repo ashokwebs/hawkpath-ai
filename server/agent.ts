@@ -9,17 +9,19 @@
  * and size-capped; per-IP token bucket + global daily budget; bounded agent loop.
  */
 import type { Content, FunctionDeclaration } from '@google/genai';
-import { StudentProfile, CompletedCourseRecord } from '../src/types';
-import { ARTICULATION_TARGETS } from '../src/data/articulationAgreements';
-import { COURSE_MAP } from '../src/data/crcCurriculum';
+import { StudentProfile, CompletedCourseRecord } from '../src/types/index.js';
+import { ARTICULATION_TARGETS } from '../src/data/articulationAgreements.js';
+import { COURSE_MAP } from '../src/data/crcCurriculum.js';
 import {
   Scenario, runScenario, summarizeSim, downstreamOf, upstreamOf,
   normalizeCourseCode, isKnownCourse, termIndex, getTarget,
-} from '../src/utils/scenario';
-import { takeToken } from './ratelimit';
-import { verifyUser } from './auth';
-import { apiKey, generate, describeError } from './gemini';
-import { outcomesForTarget, describeOutcomes } from './scorecard';
+} from '../src/utils/scenario.js';
+import { takeToken } from './ratelimit.js';
+import { verifyUser } from './auth.js';
+import { apiKey, generate, describeError } from './gemini.js';
+import { groq, groqKey, groqModels, isGroqTransient, describeGroqError } from './groq.js';
+import type Groq from 'groq-sdk';
+import { outcomesForTarget, describeOutcomes } from './scorecard.js';
 
 const MAX_AGENT_STEPS = 6;
 const MAX_HISTORY = 16;
@@ -80,13 +82,15 @@ function validateScenario(raw: any): Scenario {
   };
 }
 
-function validateMessages(raw: any): Content[] {
+interface ChatTurn { role: 'user' | 'assistant'; text: string }
+
+function validateMessages(raw: any): ChatTurn[] {
   if (!Array.isArray(raw) || raw.length === 0) throw new ValidationError('messages required');
   const msgs = raw.slice(-MAX_HISTORY).map((m: any) => {
     if (m?.role !== 'user' && m?.role !== 'assistant') throw new ValidationError('bad role');
     const text = clean(m.content, MAX_MSG_CHARS).trim();
     if (!text) throw new ValidationError('empty message');
-    return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text }] } as Content;
+    return { role: m.role, text } as ChatTurn;
   });
   while (msgs.length && msgs[0].role !== 'user') msgs.shift();
   if (!msgs.length || msgs[msgs.length - 1].role !== 'user') throw new ValidationError('last message must be from user');
@@ -189,7 +193,9 @@ async function runTool(name: string, input: any, ctx: ToolCtx): Promise<unknown>
       if (!c) return { error: `Unknown course ${code}. Known: ${[...COURSE_MAP.keys()].join(', ')}` };
       const rec = ctx.profile.completedCourses.find(r => r.courseCode === code);
       return {
-        code, title: c.title, units: c.units, termsOffered: c.termsOffered, minGrade: c.minGrade ?? 'C',
+        code, title: c.title, description: c.description, units: c.units, termsOffered: c.termsOffered, minGrade: c.minGrade ?? 'C',
+        onYourCriticalPath: runScenario(ctx.profile, ctx.scenario).sim.criticalPathCourses.includes(code),
+        requiredForMajorPrepAt: ARTICULATION_TARGETS.filter(t => t.requiredMajorCourses.includes(code)).map(t => `${t.universityName} ${t.majorName}`),
         directPrerequisites: c.prerequisites,
         fullPrerequisiteChain: upstreamOf(code),
         unlocksDownstream: downstreamOf(code),
@@ -233,6 +239,8 @@ Hard rules:
 - Never invent schedules, terms, delays, GPAs or course data. Get every number from a tool call, and say the numbers the tool returned.
 - For cost, debt, earnings or graduation-rate questions, call get_school_outcomes (real federal data) and say it comes from the College Scorecard.
 - For any "what if" question, call simulate_what_if AND show_scenario_on_dashboard in the same turn (the student is looking at their live dashboard, so always show the scenario).
+- Only state facts that appear in tool results. Do not add claims about admissions committees, policies, other courses or anything the tools did not return. If a tool result is empty (e.g. a course unlocks nothing else in this catalog), say exactly that.
+- Never estimate a delay or a term without calling simulate_what_if first.
 - If a course or school is not in the tools' data, say so plainly.
 - Replies are often read aloud: 2-5 short sentences, plain language, no markdown tables, no headers. Bold at most one key number with **.
 - End with one concrete next step (e.g. talk to a MESA counselor, a summer option).
@@ -265,6 +273,102 @@ async function offlineAnswer(question: string, ctx: ToolCtx) {
 // ---------------------------------------------------------------- handler
 export interface AdvisorResult { status: number; body: Record<string, unknown>; headers?: Record<string, string> }
 
+type Trace = { tool: string; input: unknown; output: unknown; ms: number; error?: boolean }[];
+interface LoopResult { reply: string; model: string; usage: { input: number; output: number } }
+
+async function execTool(name: string, args: any, ctx: ToolCtx, trace: Trace): Promise<unknown> {
+  const t0 = performance.now();
+  try {
+    const output = await runTool(name, args ?? {}, ctx);
+    trace.push({ tool: name, input: args ?? {}, output, ms: Math.round(performance.now() - t0) });
+    return output;
+  } catch (err) {
+    trace.push({ tool: name, input: args ?? {}, output: String(err), ms: 0, error: true });
+    return { error: `Tool failed: ${String(err)}` };
+  }
+}
+
+const REFUSAL = "I can't help with that one. Try asking about your classes, prerequisites or transfer timeline.";
+
+// ---------------------------------------------------------------- provider: Groq (primary)
+const GROQ_TOOLS: Groq.Chat.ChatCompletionTool[] = TOOLS.map(t => ({
+  type: 'function',
+  function: { name: String(t.name), description: t.description, parameters: t.parametersJsonSchema as Record<string, unknown> },
+}));
+
+async function runGroq(history: ChatTurn[], system: string, ctx: ToolCtx, trace: Trace, started: number): Promise<LoopResult> {
+  const usage = { input: 0, output: 0 };
+  const messages: Groq.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: system },
+    ...history.map(m => ({ role: m.role, content: m.text }) as Groq.Chat.ChatCompletionMessageParam),
+  ];
+  const models = groqModels();
+  let mi = 0;
+  for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+    if (Date.now() - started > 45_000) throw new Error('Agent time budget exceeded (timeout)');
+    let res: Groq.Chat.ChatCompletion;
+    for (;;) {
+      try {
+        res = await groq().chat.completions.create({
+          model: models[mi], messages, tools: GROQ_TOOLS, tool_choice: 'auto', parallel_tool_calls: true,
+          temperature: 0.2, max_completion_tokens: 1500,
+        });
+        break;
+      } catch (e) {
+        if (isGroqTransient(e) && mi < models.length - 1) { console.warn(`[groq] ${models[mi]}: ${describeGroqError(e)}, trying next model`); mi++; continue; }
+        throw e;
+      }
+    }
+    usage.input += res.usage?.prompt_tokens ?? 0;
+    usage.output += res.usage?.completion_tokens ?? 0;
+    const msg = res.choices[0]?.message;
+    if (!msg) throw new Error('Groq returned no choices');
+    const calls = msg.tool_calls ?? [];
+    if (calls.length === 0) return { reply: (msg.content ?? '').trim() || 'Done.', model: res.model, usage };
+
+    messages.push({ role: 'assistant', content: msg.content ?? '', tool_calls: calls });
+    const outputs = await Promise.all(calls.map(async tc => {
+      let args: any = {};
+      try { args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {}; } catch { args = {}; }
+      return { id: tc.id, output: await execTool(tc.function.name, args, ctx, trace) };
+    }));
+    for (const o of outputs) messages.push({ role: 'tool', tool_call_id: o.id, content: JSON.stringify(o.output) });
+  }
+  return { reply: 'I ran out of reasoning steps. Try a narrower question.', model: models[mi], usage };
+}
+
+// ---------------------------------------------------------------- provider: Gemini (backup)
+async function runGemini(history: ChatTurn[], system: string, ctx: ToolCtx, trace: Trace, started: number): Promise<LoopResult> {
+  const usage = { input: 0, output: 0 };
+  const contents: Content[] = history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.text }] }));
+  let lastModel = '';
+  for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+    if (Date.now() - started > 50_000) throw new Error('Agent time budget exceeded (timeout)');
+    const { res, model } = await generate({
+      contents,
+      config: { systemInstruction: system, tools: [{ functionDeclarations: TOOLS }], temperature: 0.3, maxOutputTokens: 2048 },
+    });
+    lastModel = model;
+    usage.input += res.usageMetadata?.promptTokenCount ?? 0;
+    usage.output += res.usageMetadata?.candidatesTokenCount ?? 0;
+    const candidate = res.candidates?.[0];
+    if (!candidate?.content || res.promptFeedback?.blockReason || candidate.finishReason === 'SAFETY') return { reply: REFUSAL, model, usage };
+    const calls = res.functionCalls ?? [];
+    if (calls.length === 0) return { reply: (res.text ?? '').trim() || 'Done.', model, usage };
+    contents.push(candidate.content); // keep model turn verbatim (thought signatures)
+    contents.push({
+      role: 'user',
+      parts: await Promise.all(calls.map(async fc => {
+        const name = String(fc.name ?? '');
+        const output = await execTool(name, fc.args, ctx, trace);
+        return { functionResponse: { id: fc.id, name, response: { output } } };
+      })),
+    });
+  }
+  return { reply: 'I ran out of reasoning steps. Try a narrower question.', model: lastModel, usage };
+}
+
+// ---------------------------------------------------------------- handler
 export async function handleAdvisor(rawBody: unknown, clientIp: string, authHeader?: string | null): Promise<AdvisorResult> {
   const started = Date.now();
   const user = await verifyUser(authHeader);
@@ -278,76 +382,48 @@ export async function handleAdvisor(rawBody: unknown, clientIp: string, authHead
   }
 
   let ctx: ToolCtx;
-  let contents: Content[];
+  let history: ChatTurn[];
   try {
     const body = (rawBody ?? {}) as any;
     ctx = { profile: validateProfile(body.profile), scenario: validateScenario(body.scenario), uiActions: [] };
-    contents = validateMessages(body.messages);
+    history = validateMessages(body.messages);
   } catch (e) {
     if (e instanceof ValidationError) return { status: 400, body: { error: `Invalid request: ${e.message}` } };
     throw e;
   }
-  const lastQuestion = String(contents[contents.length - 1].parts?.[0]?.text ?? '');
+  const lastQuestion = history[history.length - 1].text;
+  const system = systemPrompt(ctx.profile, ctx.scenario);
 
-  if (!apiKey()) {
+  const providers: { name: 'Groq' | 'Gemini'; run: typeof runGroq; describe: (e: unknown) => string }[] = [];
+  if (groqKey()) providers.push({ name: 'Groq', run: runGroq, describe: describeGroqError });
+  if (apiKey()) providers.push({ name: 'Gemini', run: runGemini, describe: describeError });
+
+  if (!providers.length) {
     const off = await offlineAnswer(lastQuestion, ctx);
     return { status: 200, body: { mode: 'offline', reply: off.text, trace: off.trace, uiActions: [], ms: Date.now() - started } };
   }
 
-  const trace: { tool: string; input: unknown; output: unknown; ms: number; error?: boolean }[] = [];
-  const usage = { input: 0, output: 0 };
-  const systemInstruction = systemPrompt(ctx.profile, ctx.scenario);
-
-  try {
-    for (let step = 0; step < MAX_AGENT_STEPS; step++) {
-      if (Date.now() - started > 50_000) throw new Error('Agent time budget exceeded (timeout)');
-      const { res, model } = await generate({
-        contents,
-        config: {
-          systemInstruction,
-          tools: [{ functionDeclarations: TOOLS }],
-          temperature: 0.3,
-          maxOutputTokens: 2048,
+  const failures: string[] = [];
+  for (const p of providers) {
+    const trace: Trace = [];
+    ctx.uiActions = []; // a failed attempt must not leave half-applied UI actions
+    try {
+      const r = await p.run(history, system, ctx, trace, started);
+      return {
+        status: 200,
+        body: {
+          mode: 'live', provider: p.name, model: r.model, reply: r.reply, trace, uiActions: ctx.uiActions,
+          usage: r.usage, ms: Date.now() - started, ...(failures.length ? { failover: failures } : {}),
         },
-      });
-      usage.input += res.usageMetadata?.promptTokenCount ?? 0;
-      usage.output += res.usageMetadata?.candidatesTokenCount ?? 0;
-
-      const candidate = res.candidates?.[0];
-      if (!candidate?.content || res.promptFeedback?.blockReason || candidate.finishReason === 'SAFETY') {
-        return { status: 200, body: { mode: 'live', model, reply: "I can't help with that one. Try asking about your classes, prerequisites or transfer timeline.", trace, uiActions: ctx.uiActions, usage, ms: Date.now() - started } };
-      }
-
-      const calls = res.functionCalls ?? [];
-      if (calls.length === 0) {
-        const reply = (res.text ?? '').trim();
-        return { status: 200, body: { mode: 'live', model, reply: reply || 'Done.', trace, uiActions: ctx.uiActions, usage, ms: Date.now() - started } };
-      }
-
-      // Keep the model turn exactly as returned (it may carry thought signatures), then answer every call.
-      contents.push(candidate.content);
-      contents.push({
-        role: 'user',
-        parts: await Promise.all(calls.map(async fc => {
-          const name = String(fc.name ?? '');
-          const t0 = performance.now();
-          try {
-            const output = await runTool(name, fc.args ?? {}, ctx);
-            trace.push({ tool: name, input: fc.args ?? {}, output, ms: Math.round(performance.now() - t0) });
-            return { functionResponse: { id: fc.id, name, response: { output } } };
-          } catch (err) {
-            trace.push({ tool: name, input: fc.args ?? {}, output: String(err), ms: 0, error: true });
-            return { functionResponse: { id: fc.id, name, response: { error: `Tool failed: ${String(err)}` } } };
-          }
-        })),
-      });
+      };
+    } catch (err) {
+      const reason = p.describe(err);
+      failures.push(`${p.name}: ${reason}`);
+      console.error(`[advisor] ${p.name} failed:`, reason, err instanceof Error ? err.message.slice(0, 300) : err);
     }
-    return { status: 200, body: { mode: 'live', reply: 'I ran out of reasoning steps. Try a narrower question.', trace, uiActions: ctx.uiActions, usage, ms: Date.now() - started } };
-  } catch (err) {
-    // Graceful degradation: the deterministic engine still answers.
-    const off = await offlineAnswer(lastQuestion, ctx);
-    const reason = describeError(err);
-    console.error('[advisor]', reason, err instanceof Error ? err.message : err);
-    return { status: 200, body: { mode: 'degraded', degradedReason: reason, reply: off.text, trace: [...trace, ...off.trace], uiActions: [], ms: Date.now() - started } };
   }
+
+  // Graceful degradation: the deterministic engine still answers.
+  const off = await offlineAnswer(lastQuestion, ctx);
+  return { status: 200, body: { mode: 'degraded', degradedReason: failures.join('; '), reply: off.text, trace: off.trace, uiActions: [], ms: Date.now() - started } };
 }

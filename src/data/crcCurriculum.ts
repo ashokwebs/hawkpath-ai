@@ -1,4 +1,4 @@
-import { Course } from '../types';
+import { Course } from '../types/index.js';
 
 export const CRC_COURSES: Course[] = [
   // --- Computer Science (CISP) ---

@@ -19,7 +19,7 @@ Generic AI chatbots make this worse: they *guess* at prerequisites and schedules
 | | |
 |---|---|
 | 🎙️ **Voice advisor** | Hands-free questions and spoken answers (Web Speech API in, `speechSynthesis` out). |
-| 🧠 **Gemini function-calling agent** | Gemini never computes a plan. It can only call 4 deterministic tools and must speak the numbers they return. Every tool call is shown in the UI. |
+| 🧠 **Tool-calling AI agent (Groq + Gemini)** | The model never computes a plan. It can only call 4 deterministic tools and must speak the numbers they return. Every tool call is shown in the UI. |
 | 🔀 **What-if simulator** | Fail a class, change work hours or unit load, switch target school. Re-plans instantly and shows the delay in terms. |
 | 🕸️ **Prerequisite DAG** | Semester-layered graph with an animated critical path. Hover to trace everything a course needs and unlocks. |
 | 📄 **Transcript import** | Upload a photo or PDF of an unofficial transcript. Gemini multimodal input + JSON-schema structured output extracts rows, then **every course is re-validated against the catalog**, so hallucinated codes are dropped. |
@@ -39,7 +39,7 @@ Server (Vite middleware in dev / Vercel functions in prod)  server/
  ├─ verify JWT (Supabase) → member or guest tier
  ├─ token-bucket rate limit + global daily budget
  ├─ schema validation, size caps, control-char stripping, allow-listed targets
- └─ Gemini agent loop (max 6 steps, function calling)
+ └─ AI agent loop (max 6 steps): Groq gpt-oss-120b → Gemini Flash failover → offline engine
        tools ──► simulate_what_if          (topological scheduler + critical-path DP)
              ──► get_course_dependencies   (DAG reachability up/down)
              ──► compare_transfer_targets  (runs every school)
@@ -57,7 +57,7 @@ Server (Vite middleware in dev / Vercel functions in prod)  server/
 
 ## Security & reliability
 
-- 🔑 `GEMINI_API_KEY` exists **only on the server** (not `VITE_`-prefixed, so it is never bundled; verified by grepping `dist/`). No keys in the repo; `.env` is git-ignored; `.env.example` documents config.
+- 🔑 `GROQ_API_KEY` and `GEMINI_API_KEY` exist **only on the server** (not `VITE_`-prefixed, so it is never bundled; verified by grepping `dist/`). No keys in the repo; `.env` is git-ignored; `.env.example` documents config.
 - 🧱 Input validation: profile/scenario/messages are schema-checked, clamped and size-capped (64 KB body, 1,500-char messages, 16-turn history); course codes are normalised and checked against the catalog; target ids are allow-listed.
 - 🚦 Rate limiting: per-IP token bucket for guests, per-user bucket (verified JWT) for members, plus a global daily request budget. Returns `429` + `Retry-After`; the UI shows a countdown.
 - 🔁 Resilience: 429/5xx retried with exponential backoff + jitter; bounded agent loop; typed `ApiError` status handling, per-model circuit breaker + automatic failover when a model is overloaded (503), rate-limited (429, honours Google's `retryDelay`) or unavailable (404). If the AI is down, the deterministic engine still answers (UI shows *"Graceful fallback"*).
@@ -68,7 +68,8 @@ Server (Vite middleware in dev / Vercel functions in prod)  server/
 
 | Kind | What |
 |---|---|
-| AI model | **Google Gemini API** via `@google/genai`: a rotating pool of fast Flash / Flash-Lite models (`gemini-3.5-flash-lite` first) so free-tier daily quotas are spread across models, plus newer Flash models discovered via the models API (override with `GEMINI_MODEL`); function calling, image/PDF input, JSON-schema structured output. Free tier compatible. |
+| AI (primary) | **Groq API** (`groq-sdk`): `openai/gpt-oss-120b` with tool calling, ~2s answers, failover to `gpt-oss-20b` / `qwen3.8-27b` |
+| AI (backup + vision) | **Google Gemini API** via `@google/genai`: a rotating pool of fast Flash / Flash-Lite models (`gemini-3.5-flash-lite` first) so free-tier daily quotas are spread across models, plus newer Flash models discovered via the models API (override with `GEMINI_MODEL`); function calling, image/PDF input, JSON-schema structured output. Free tier compatible. |
 | Public data API | **College Scorecard API** (U.S. Dept. of Education, via api.data.gov): school outcomes, server-side, cached 24h, stale-on-error |
 | Browser APIs | **Web Speech API** (`SpeechRecognition`) for voice input, **SpeechSynthesis** for spoken replies, FileReader |
 | Auth / DB | **Supabase** Auth + Postgres with row-level security (`@supabase/supabase-js`), optional |
@@ -81,7 +82,7 @@ Server (Vite middleware in dev / Vercel functions in prod)  server/
 
 ```bash
 npm install
-cp .env.example .env        # add GEMINI_API_KEY from aistudio.google.com (Supabase vars optional)
+cp .env.example .env        # add GROQ_API_KEY and GEMINI_API_KEY (Supabase vars optional)
 npm run dev                 # http://localhost:5173
 ```
 
@@ -95,7 +96,7 @@ With no key set, the app still works in **offline mode** (deterministic answers,
 
 ### Deploy (Vercel)
 1. Push to GitHub, then import the repo in Vercel (framework: Vite).
-2. Add `GEMINI_API_KEY` (and the Supabase vars if used) under Environment Variables.
+2. Add `GROQ_API_KEY`, `GEMINI_API_KEY` (and the Supabase vars if used) under Environment Variables.
 3. Deploy. `api/advisor.ts` and `api/transcript.ts` become serverless functions.
 
 ## Data honesty

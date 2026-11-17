@@ -1,4 +1,4 @@
-import { ArticulationTarget } from '../types';
+import { ArticulationTarget } from '../types/index.js';
 
 export const ARTICULATION_TARGETS: ArticulationTarget[] = [
   {

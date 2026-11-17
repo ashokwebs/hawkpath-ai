@@ -1,7 +1,7 @@
-import { StudentProfile, SimulationResult, ArticulationTarget } from '../types';
-import { ARTICULATION_TARGETS } from '../data/articulationAgreements';
-import { COURSE_MAP, CRC_COURSES } from '../data/crcCurriculum';
-import { simulateAcademicRoadmap } from './graphAlgorithms';
+import { StudentProfile, SimulationResult, ArticulationTarget } from '../types/index.js';
+import { ARTICULATION_TARGETS } from '../data/articulationAgreements.js';
+import { COURSE_MAP, CRC_COURSES } from '../data/crcCurriculum.js';
+import { simulateAcademicRoadmap } from './graphAlgorithms.js';
 
 /**
  * A "what-if" scenario layered on top of a student's real record.
@@ -115,11 +115,7 @@ export function summarizeSim(sim: SimulationResult) {
     majorPrepCompleteness: `${sim.majorPrepCompleteness}%`,
     criticalPath: sim.criticalPathCourses,
     bottlenecks: sim.bottlenecksFound,
-    semesters: sim.semesters.map(s => ({
-      term: `${s.term} ${s.year}`,
-      units: s.totalUnits,
-      courses: s.courses.map(c => c.code),
-      warnings: s.warnings,
-    })),
+    // Compact form keeps AI token usage low: "Spring 2027 (14u): CISP 430, PHYS 411"
+    plan: sim.semesters.map(s => `${s.term} ${s.year} (${s.totalUnits}u): ${s.courses.map(c => c.code).join(', ')}${s.warnings.length ? ` ⚠ ${s.warnings.join('; ')}` : ''}`),
   };
 }

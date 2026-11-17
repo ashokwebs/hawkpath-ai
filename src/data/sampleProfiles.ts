@@ -1,4 +1,4 @@
-import { StudentProfile } from '../types';
+import { StudentProfile } from '../types/index.js';
 
 export const SAMPLE_PROFILES: StudentProfile[] = [
   {

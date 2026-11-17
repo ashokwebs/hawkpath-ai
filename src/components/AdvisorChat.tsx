@@ -10,6 +10,8 @@ interface Msg {
   content: string;
   trace?: TraceEntry[];
   mode?: 'live' | 'offline' | 'degraded';
+  provider?: string;
+  model?: string;
   degradedReason?: string;
   ms?: number;
   usage?: { input: number; output: number };
@@ -139,7 +141,7 @@ export const AdvisorChat: React.FC<Props> = ({ profile, scenario, onApplyScenari
       for (const a of data.uiActions ?? []) if (a.type === 'apply_scenario') onApplyScenario(a.scenario);
       setMessages(m => [...m, {
         role: 'assistant', content: data.reply, trace: data.trace, mode: data.mode,
-        degradedReason: data.degradedReason, ms: data.ms, usage: data.usage,
+        degradedReason: data.degradedReason, ms: data.ms, usage: data.usage, provider: data.provider, model: data.model,
       }]);
       speakText(data.reply);
     } catch (e) {
@@ -191,7 +193,7 @@ export const AdvisorChat: React.FC<Props> = ({ profile, scenario, onApplyScenari
         <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center"><Bot className="w-4.5 h-4.5 text-blue-600" /></div>
         <div className="min-w-0">
           <div className="text-sm font-bold">HawkPath Voice Advisor</div>
-          <div className="text-[11px] text-slate-500 truncate">Gemini function-calling over a deterministic DAG engine</div>
+          <div className="text-[11px] text-slate-500 truncate">AI tool-calling over a verified planning engine</div>
         </div>
         <button onClick={() => { setSpeak(s => !s); window.speechSynthesis?.cancel(); }}
           className="ml-auto p-2 rounded-lg hover:bg-slate-100 text-slate-600" title={speak ? 'Mute voice replies' : 'Speak replies aloud'}
@@ -204,7 +206,7 @@ export const AdvisorChat: React.FC<Props> = ({ profile, scenario, onApplyScenari
         <div className={`px-4 py-1.5 text-[11px] flex items-center gap-1.5 border-b border-slate-200 ${
           last.mode === 'live' ? 'text-emerald-700 bg-emerald-50' : 'text-amber-800 bg-amber-50'}`}>
           {last.mode === 'live' ? <Zap className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
-          {last.mode === 'live' && `Live Gemini API · ${last.ms}ms${last.usage ? ` · ${last.usage.input + last.usage.output} tokens` : ''}`}
+          {last.mode === 'live' && `Live · ${last.provider ?? 'AI'}${last.model ? ` (${last.model.replace(/^.*\//, '')})` : ''} · ${(Number(last.ms) / 1000).toFixed(1)}s${last.usage ? ` · ${last.usage.input + last.usage.output} tokens` : ''}`}
           {last.mode === 'offline' && 'Offline mode: no API key configured, answering from the deterministic engine'}
           {last.mode === 'degraded' && `Graceful fallback${last.degradedReason ? `: ${last.degradedReason}` : ''}`}
         </div>

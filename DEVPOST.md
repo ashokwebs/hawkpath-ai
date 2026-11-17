@@ -12,14 +12,14 @@ HawkPath turns a student's record into a live, semester-by-semester prerequisite
 - *"Show me what 30 hours of work does to my plan."*
 - *"Which school can I transfer to soonest?"*
 
-A Gemini agent answers by calling deterministic tools: a topological scheduler, a critical-path solver, DAG reachability and a school comparer. It then speaks the exact result ("transfer slips from Spring 2028 to Fall 2028") and pushes the scenario onto the dashboard, which redraws live. Every tool call is visible on screen.
+An AI agent (Groq, with Gemini as automatic backup) answers by calling deterministic tools: a topological scheduler, a critical-path solver, DAG reachability and a school comparer. It then speaks the exact result ("transfer slips from Spring 2028 to Fall 2028") and pushes the scenario onto the dashboard, which redraws live. Every tool call is visible on screen.
 
 Students can also import an unofficial transcript photo or PDF (Gemini multimodal → structured JSON → catalog validation), save their plan with an account, and print a counselor-ready report for their MESA appointment.
 
 ## How we built it
 - **Frontend:** React + TypeScript + Vite + Tailwind; custom SVG DAG renderer with animated transitions.
 - **Voice:** Web Speech API for speech-to-text and SpeechSynthesis for replies. Zero extra cost, no extra service.
-- **AI:** Google Gemini API (`@google/genai`, v1beta function calling) with a rotating pool of Flash/Flash-Lite models, so free-tier per-model quotas don't take the app down with a server-side function-calling loop (max 6 steps), image + PDF input and JSON-schema structured output for transcripts. Free tier friendly.
+- **AI:** Groq API (`openai/gpt-oss-120b`, ~2s tool-calling answers) as the primary provider, with automatic failover to the Google Gemini API (`@google/genai`, v1beta function calling) with a rotating pool of Flash/Flash-Lite models, so free-tier per-model quotas don't take the app down with a server-side function-calling loop (max 6 steps), image + PDF input and JSON-schema structured output for transcripts. Free tier friendly.
 - **Real data:** U.S. Department of Education **College Scorecard API**: net price, graduation rate, median debt and earnings for every target school, shown next to the student's projected transfer date and callable by the agent (`get_school_outcomes`).
 - **Engine:** the same TypeScript graph code runs in the browser (sliders, graph) and on the server (agent tools), so the AI's numbers and the UI's numbers can never disagree.
 - **Auth/data:** Supabase Auth + Postgres row-level security; guests use local storage.
@@ -48,13 +48,13 @@ Agentic AI is most trustworthy when the model orchestrates and explains while de
 Live ASSIST.org articulation sync, more majors, Los Rios cross-campus seat search, and a counselor dashboard for MESA programs (the paid Campus tier; students stay free).
 
 ## Built with
-google-gemini-api, college-scorecard-api, typescript, react, vite, tailwindcss, web-speech-api, supabase, postgresql, vercel, node.js
+groq, google-gemini-api, college-scorecard-api, typescript, react, vite, tailwindcss, web-speech-api, supabase, postgresql, vercel, node.js
 
 ## Declared mocks / limitations (required by rules)
 - Course catalog and articulation targets are a curated sample dataset, not a live ASSIST.org feed.
 - Demo students (Ashok, Maya, Marcus) are fictional sample profiles.
 - The "For colleges" counselor workspace on the landing page is an illustrative preview with example data (labelled in the UI); the student product and all school outcome numbers are live.
-- Everything else in the demo (Gemini calls, tool execution, transcript reading, auth) is live.
+- Everything else in the demo (Groq/Gemini calls, tool execution, transcript reading, auth) is live.
 
 ---
 
@@ -71,7 +71,7 @@ Click the mic: *"What happens if I fail CISP 400 and have to work 30 hours a wee
 - Show the reply being spoken.
 - Expand **"deterministic tool calls"**: `simulate_what_if` → `show_scenario_on_dashboard`.
 - The graph redraws: CISP 400 turns red (retake), the units cap at 10, and the transfer stat turns red: **Fall 2028, +1 term**. GPA drops below UC Davis's 3.4 minimum.
-Say: "Gemini didn't guess any of that. It called our scheduler, and you can see every call."
+Say: "The AI didn't guess any of that. It called our scheduler, and you can see every call."
 
 **1:40–2:05 · Compare schools / sliders**
 Ask: *"Which school can I transfer to soonest?"* (`compare_transfer_targets`). Then drag the work-hours slider to show the same engine re-planning instantly with no AI.

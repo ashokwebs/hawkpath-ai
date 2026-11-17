@@ -8,3 +8,4 @@ dist
 
 # private strategy notes: never publish
 CRC_HACKS_MASTER_DOSSIER.md
+.env*

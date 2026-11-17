@@ -1,6 +1,6 @@
-import { handleAdvisor } from './agent';
-import { handleTranscript } from './transcript';
-import { handleSchools } from './scorecard';
+import { handleAdvisor } from './agent.js';
+import { handleTranscript } from './transcript.js';
+import { handleSchools } from './scorecard.js';
 
 export interface RouteResult { status: number; body: Record<string, unknown>; headers?: Record<string, string> }
 

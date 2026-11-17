@@ -42,7 +42,7 @@ function apiRoutes(): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  for (const k of ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_MODEL', 'SCORECARD_API_KEY', 'DAILY_REQUEST_BUDGET', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+  for (const k of ['GROQ_API_KEY', 'GROQ_MODEL', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_MODEL', 'SCORECARD_API_KEY', 'DAILY_REQUEST_BUDGET', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
     if (env[k] && !process.env[k]) process.env[k] = env[k]
   }
   return {

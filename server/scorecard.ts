@@ -4,7 +4,7 @@
  * median debt, earnings, Pell share. Cached for 24h per instance; serves the
  * last good copy if the API is down, and never blocks the planner.
  */
-import { ARTICULATION_TARGETS } from '../src/data/articulationAgreements';
+import { ARTICULATION_TARGETS } from '../src/data/articulationAgreements.js';
 
 const BASE = 'https://api.data.gov/ed/collegescorecard/v1/schools';
 const TTL_MS = 24 * 3600_000;
