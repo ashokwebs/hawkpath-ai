@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.vercel
+*.log
+
+# private strategy notes: never publish
+CRC_HACKS_MASTER_DOSSIER.md
