@@ -1,5 +1,9 @@
 # Devpost submission kit: HawkPath AI
 
+## Links
+- Live demo: https://hawkpath-ai.vercel.app
+- Code: https://github.com/ashokwebs/hawkpath-ai
+
 ## Tagline
 Ask "what if I fail this class?" out loud and get an exact answer. The AI talks; a real graph algorithm does the math.
 

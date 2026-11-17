@@ -6,6 +6,8 @@ Ask out loud *"What if I fail CISP 400 and pick up 30 hours of work?"* and HawkP
 
 Built for **CRC Hacks 2026** at Cosumnes River College.
 
+**Live:** https://hawkpath-ai.vercel.app · **Code:** https://github.com/ashokwebs/hawkpath-ai
+
 ---
 
 ## The problem
