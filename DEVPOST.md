@@ -26,7 +26,7 @@ Students can also import an unofficial transcript photo or PDF (Gemini multimoda
 - **AI:** Groq API (`openai/gpt-oss-120b`, ~2s tool-calling answers) as the primary provider, with automatic failover to the Google Gemini API (`@google/genai`, v1beta function calling) with a rotating pool of Flash/Flash-Lite models, so free-tier per-model quotas don't take the app down with a server-side function-calling loop (max 6 steps), image + PDF input and JSON-schema structured output for transcripts. Free tier friendly.
 - **Real data:** U.S. Department of Education **College Scorecard API**: net price, graduation rate, median debt and earnings for every target school, shown next to the student's projected transfer date and callable by the agent (`get_school_outcomes`).
 - **Engine:** the same TypeScript graph code runs in the browser (sliders, graph) and on the server (agent tools), so the AI's numbers and the UI's numbers can never disagree.
-- **Auth/data:** Supabase Auth + Postgres row-level security; guests use local storage.
+- **Auth/data:** Firebase Authentication + Firestore with owner-only security rules; guests use local storage.
 - **Hosting:** Vercel static site + serverless functions.
 
 ## Security & API handling
@@ -34,7 +34,7 @@ Students can also import an unofficial transcript photo or PDF (Gemini multimoda
 - Schema validation, clamping and size caps on every request; course codes checked against the catalog; allow-listed targets.
 - Token-bucket rate limits (guest per IP, member per verified user) + a global daily budget, with `429 + Retry-After` and a UI countdown.
 - SDK exponential-backoff retries, typed error handling, bounded agent loop, and a **graceful deterministic fallback** when the AI is unavailable.
-- Identity only from a verified JWT; RLS on saved plans; security headers.
+- Identity only from a verified JWT; owner-only Firestore security rules on saved plans; security headers.
 
 ## Challenges
 - Keeping the LLM honest: we moved all math into tools and made the system prompt require tool-sourced numbers. The UI shows the tool trace so anyone can audit an answer.
@@ -52,7 +52,7 @@ Agentic AI is most trustworthy when the model orchestrates and explains while de
 Live ASSIST.org articulation sync, more majors, Los Rios cross-campus seat search, and a counselor dashboard for MESA programs (the paid Campus tier; students stay free).
 
 ## Built with
-groq, google-gemini-api, college-scorecard-api, typescript, react, vite, tailwindcss, web-speech-api, supabase, postgresql, vercel, node.js
+groq, google-gemini-api, college-scorecard-api, typescript, react, vite, tailwindcss, web-speech-api, firebase, firestore, vercel, node.js
 
 ## Declared mocks / limitations (required by rules)
 - Course catalog and articulation targets are a curated sample dataset, not a live ASSIST.org feed.
@@ -87,7 +87,7 @@ Scroll to "Compare transfer options": live College Scorecard net price, grad rat
 "Add my classes" → upload a transcript screenshot → courses fill in (mention catalog validation). Save → "Counselor report" → print preview.
 
 **2:30–2:50 · Engineering & security (quick)**
-Show `server/agent.ts` briefly: key server-only, validation, rate limit (show the 429 countdown if you can), graceful fallback. Mention Supabase RLS for saved plans.
+Show `server/agent.ts` briefly: key server-only, validation, rate limit (show the 429 countdown if you can), graceful fallback. Mention Firebase Auth + owner-only Firestore rules for saved plans.
 
 **2:50–3:00 · Close**
 "HawkPath: free for students, built for MESA. Know exactly when you'll transfer, and what could stop you."

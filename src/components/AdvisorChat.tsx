@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Volume2, VolumeX, Send, Wrench, Bot, LoaderCircle, ChevronDown, ShieldCheck, Zap } from 'lucide-react';
 import { StudentProfile } from '../types';
 import { Scenario } from '../utils/scenario';
-import { useAuth, authHeaders } from '../lib/auth';
+import { authHeaders } from '../lib/auth';
 
 interface TraceEntry { tool: string; input: unknown; output: unknown; ms: number; error?: boolean }
 interface Msg {
@@ -80,7 +80,6 @@ const TraceView: React.FC<{ trace: TraceEntry[] }> = ({ trace }) => {
 };
 
 export const AdvisorChat: React.FC<Props> = ({ profile, scenario, onApplyScenario }) => {
-  const { session } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -124,7 +123,7 @@ export const AdvisorChat: React.FC<Props> = ({ profile, scenario, onApplyScenari
     try {
       const res = await fetch('/api/advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           profile, scenario,
           messages: history.map(m => ({ role: m.role, content: m.content })),

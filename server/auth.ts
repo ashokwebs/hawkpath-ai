@@ -1,36 +1,30 @@
 /**
- * Verifies a Supabase access token (JWT) server-side. Signed-in members get a
- * higher rate-limit tier and are keyed by user id instead of IP.
- * Never trusts a user id sent in the body: identity comes only from the verified token.
+ * Verifies a Firebase ID token (JWT) server-side using Google's public signing keys.
+ * No service account needed. Signed-in members get a higher rate-limit tier and are
+ * keyed by user id instead of IP. Identity comes only from the verified token, never
+ * from the request body.
  */
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-let sb: SupabaseClient | null = null;
-const cache = new Map<string, { userId: string; exp: number }>();
+const JWKS = createRemoteJWKSet(
+  new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'),
+  { cacheMaxAge: 6 * 3600_000, timeoutDuration: 5_000 },
+);
 
-function client(): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  sb ??= createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  return sb;
-}
+const projectId = () => process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || '';
 
 export async function verifyUser(authHeader: string | undefined | null): Promise<{ userId: string } | null> {
   const m = String(authHeader ?? '').match(/^Bearer\s+([A-Za-z0-9._-]{20,4096})$/);
-  if (!m) return null;
-  const token = m[1];
-  const hit = cache.get(token);
-  if (hit && hit.exp > Date.now()) return { userId: hit.userId };
-  const c = client();
-  if (!c) return null;
+  const pid = projectId();
+  if (!m || !pid) return null;
   try {
-    const { data, error } = await c.auth.getUser(token);
-    if (error || !data.user) return null;
-    cache.set(token, { userId: data.user.id, exp: Date.now() + 60_000 });
-    if (cache.size > 2000) cache.clear();
-    return { userId: data.user.id };
+    const { payload } = await jwtVerify(m[1], JWKS, {
+      issuer: `https://securetoken.google.com/${pid}`,
+      audience: pid,
+      algorithms: ['RS256'],
+    });
+    return typeof payload.sub === 'string' && payload.sub ? { userId: payload.sub } : null;
   } catch {
-    return null;
+    return null; // invalid/expired token → treated as a guest
   }
 }

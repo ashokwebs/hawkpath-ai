@@ -27,7 +27,7 @@ Generic AI chatbots make this worse: they *guess* at prerequisites and schedules
 | 📄 **Transcript import** | Upload a photo or PDF of an unofficial transcript. Gemini multimodal input + JSON-schema structured output extracts rows, then **every course is re-validated against the catalog**, so hallucinated codes are dropped. |
 | 🏛️ **Real outcome data** | Live **U.S. Department of Education College Scorecard** figures for every target school (net price, graduation rate, median debt, earnings 10 years after entry, Pell share), shown next to the student's projected transfer date and available to the AI as a tool. |
 | 🖨️ **Counselor-ready report** | One click to a printable plan for a MESA or transfer counselor appointment. |
-| 👤 **Accounts (optional)** | Supabase Auth (email + password, magic link, password reset). Saved plans are protected by Postgres row-level security. Guests keep their plan in the browser. |
+| 👤 **Accounts (optional)** | Firebase Authentication (email + password, Google sign-in, password reset). Saved plans live in Firestore, locked to their owner by security rules. Guests keep their plan in the browser. |
 
 ## Architecture
 
@@ -35,10 +35,10 @@ Generic AI chatbots make this worse: they *guess* at prerequisites and schedules
 Browser (React + Vite + Tailwind)
  ├─ Web Speech API  ──► text question
  ├─ Same DAG engine runs client-side for sliders / graph (src/utils)
- └─ POST /api/advisor  (+ Supabase JWT if signed in)
+ └─ POST /api/advisor  (+ Firebase ID token if signed in)
         │
 Server (Vite middleware in dev / Vercel functions in prod)  server/
- ├─ verify JWT (Supabase) → member or guest tier
+ ├─ verify Firebase ID token (Google public keys, `jose`) → member or guest tier
  ├─ token-bucket rate limit + global daily budget
  ├─ schema validation, size caps, control-char stripping, allow-listed targets
  └─ AI agent loop (max 6 steps): Groq gpt-oss-120b → Gemini Flash failover → offline engine
@@ -63,7 +63,7 @@ Server (Vite middleware in dev / Vercel functions in prod)  server/
 - 🧱 Input validation: profile/scenario/messages are schema-checked, clamped and size-capped (64 KB body, 1,500-char messages, 16-turn history); course codes are normalised and checked against the catalog; target ids are allow-listed.
 - 🚦 Rate limiting: per-IP token bucket for guests, per-user bucket (verified JWT) for members, plus a global daily request budget. Returns `429` + `Retry-After`; the UI shows a countdown.
 - 🔁 Resilience: 429/5xx retried with exponential backoff + jitter; bounded agent loop; typed `ApiError` status handling, per-model circuit breaker + automatic failover when a model is overloaded (503), rate-limited (429, honours Google's `retryDelay`) or unavailable (404). If the AI is down, the deterministic engine still answers (UI shows *"Graceful fallback"*).
-- 🛡️ Identity is taken only from a verified Supabase JWT, never from a request body. Saved plans use RLS (`supabase/schema.sql`).
+- 🛡️ Identity is taken only from a verified Firebase ID token, never from a request body. Saved plans are owner-only via `firestore.rules` (schema-checked writes, namespaced collection).
 - 🧾 Security headers (`nosniff`, `X-Frame-Options: DENY`, mic-only `Permissions-Policy`), `Cache-Control: no-store` on API responses. The chat renderer never injects HTML.
 
 ## Tech & API ledger
@@ -74,7 +74,7 @@ Server (Vite middleware in dev / Vercel functions in prod)  server/
 | AI (backup + vision) | **Google Gemini API** via `@google/genai`: a rotating pool of fast Flash / Flash-Lite models (`gemini-3.5-flash-lite` first) so free-tier daily quotas are spread across models, plus newer Flash models discovered via the models API (override with `GEMINI_MODEL`); function calling, image/PDF input, JSON-schema structured output. Free tier compatible. |
 | Public data API | **College Scorecard API** (U.S. Dept. of Education, via api.data.gov): school outcomes, server-side, cached 24h, stale-on-error |
 | Browser APIs | **Web Speech API** (`SpeechRecognition`) for voice input, **SpeechSynthesis** for spoken replies, FileReader |
-| Auth / DB | **Supabase** Auth + Postgres with row-level security (`@supabase/supabase-js`), optional |
+| Auth / DB | **Firebase** Authentication + Cloud Firestore with security rules (`firebase` JS SDK); server verifies ID tokens with `jose`. Optional |
 | Frontend | React 18, TypeScript, Vite 6, Tailwind CSS 3, lucide-react |
 | Hosting | Vercel (static site + Node serverless functions in `api/`) |
 
@@ -84,21 +84,20 @@ Server (Vite middleware in dev / Vercel functions in prod)  server/
 
 ```bash
 npm install
-cp .env.example .env        # add GROQ_API_KEY and GEMINI_API_KEY (Supabase vars optional)
+cp .env.example .env        # add GROQ_API_KEY and GEMINI_API_KEY (Firebase vars optional)
 npm run dev                 # http://localhost:5173
 ```
 
 With no key set, the app still works in **offline mode** (deterministic answers, clearly labelled).
 
-### Optional: accounts
-1. Create a free Supabase project.
-2. Run `supabase/schema.sql` in the SQL editor.
-3. Put the project URL and anon key in `.env` as `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
-4. In Supabase → Auth → URL configuration, add your site URL.
+### Optional: accounts (Firebase)
+1. Firebase console → your project → **Authentication → Get started** → enable **Email/Password** (and **Google** if wanted). Under *Settings → Authorized domains* add your Vercel domain.
+2. **Firestore Database → Create database** (production mode), then paste `firestore.rules` into *Rules* and **Publish**.
+3. **Project settings → Your apps → Web app (</>)** → copy the config into `.env` as the `VITE_FIREBASE_*` values.
 
 ### Deploy (Vercel)
 1. Push to GitHub, then import the repo in Vercel (framework: Vite).
-2. Add `GROQ_API_KEY`, `GEMINI_API_KEY` (and the Supabase vars if used) under Environment Variables.
+2. Add `GROQ_API_KEY`, `GEMINI_API_KEY` (and the `VITE_FIREBASE_*` vars if used) under Environment Variables.
 3. Deploy. `api/advisor.ts` and `api/transcript.ts` become serverless functions.
 
 ## Data honesty

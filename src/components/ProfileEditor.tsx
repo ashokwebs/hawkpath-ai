@@ -3,7 +3,7 @@ import { X, Plus, Trash2, Upload, LoaderCircle, Sparkles } from 'lucide-react';
 import { StudentProfile, CompletedCourseRecord } from '../types';
 import { CRC_COURSES, COURSE_MAP } from '../data/crcCurriculum';
 import { ARTICULATION_TARGETS } from '../data/articulationAgreements';
-import { useAuth, authHeaders } from '../lib/auth';
+import { authHeaders } from '../lib/auth';
 
 interface Props {
   open: boolean;
@@ -22,7 +22,6 @@ const fileToBase64 = (f: File) => new Promise<string>((resolve, reject) => {
 });
 
 export const ProfileEditor: React.FC<Props> = ({ open, initial, onClose, onSave }) => {
-  const { session } = useAuth();
   const [p, setP] = useState<StudentProfile>(initial);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -48,7 +47,7 @@ export const ProfileEditor: React.FC<Props> = ({ open, initial, onClose, onSave 
       const data = await fileToBase64(file);
       const res = await fetch('/api/transcript', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ mediaType: file.type, data }),
       });
       const out = await res.json().catch(() => ({}));

@@ -1,0 +1,16 @@
+rules_version = '2';
+// HawkPath: each student can read and write only their own plan document.
+// Paste into Firebase console → Firestore Database → Rules → Publish.
+// (If the project already has rules for other apps, add only the hawkpath_plans block.)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /hawkpath_plans/{userId} {
+      allow read, delete: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['profile', 'scenario', 'updatedAt'])
+        && request.resource.data.profile is map
+        && request.resource.data.scenario is map;
+    }
+    // Everything else is denied by default.
+  }
+}

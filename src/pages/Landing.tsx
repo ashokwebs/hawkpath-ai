@@ -267,7 +267,7 @@ export const Landing: React.FC = () => {
           {[
             [<Users key="a" className="w-5 h-5" />, 'Proactive outreach', 'Find students whose transfer date just slipped, before they miss a deadline.'],
             [<TriangleExclamationPoint key="b" className="w-5 h-5" />, 'Section planning', 'See which courses block the most students, term by term.'],
-            [<Lock key="c" className="w-5 h-5" />, 'Privacy by design', 'Row-level security, campus SSO and data agreements. Students control what they share.'],
+            [<Lock key="c" className="w-5 h-5" />, 'Privacy by design', 'Owner-only security rules, campus SSO and data agreements. Students control what they share.'],
           ].map(([icon, t, d]) => (
             <div key={t as string} className="flex gap-3">
               <div className="w-9 h-9 shrink-0 rounded-lg bg-white border border-slate-200 text-blue-700 flex items-center justify-center">{icon}</div>
@@ -288,7 +288,7 @@ export const Landing: React.FC = () => {
                 'API keys stay on the server and are never sent to the browser.',
                 'Every request is validated, size-limited and rate-limited.',
                 'Automatic failover between AI models, with an offline answer if AI is unavailable.',
-                'Accounts are protected by row-level security. We never sell student data.',
+                'Accounts use Firebase Authentication; saved plans are locked to their owner by security rules. We never sell student data.',
               ].map(t => <li key={t} className="flex gap-2.5"><ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />{t}</li>)}
             </ul>
           </div>
@@ -335,7 +335,7 @@ export const Landing: React.FC = () => {
         <FAQ q="Is this an official degree audit?" a="No. HawkPath is a planning aid that helps you arrive at your counselor appointment with a concrete plan and the right questions. Always confirm articulation on ASSIST.org and with a counselor." />
         <FAQ q="Which schools and majors are supported?" a="Today: CRC STEM pathways to UC Davis (Computer Science, Data Science), Sacramento State (Computer Science), UC Berkeley (EECS) and San José State (Software Engineering). More majors and colleges come with official catalog sync." />
         <FAQ q="Where does the cost and graduation data come from?" a="The U.S. Department of Education College Scorecard, an official federal dataset. It is fetched live and cached for 24 hours." />
-        <FAQ q="What happens to my data?" a="As a guest, your plan stays in your browser. With an account, we store only your course list and plan settings, protected by row-level security so that only you can read them. We never sell data." />
+        <FAQ q="What happens to my data?" a="As a guest, your plan stays in your browser. With an account, we store only your course list and plan settings, locked by security rules so that only you can read them. We never sell data." />
         <FAQ q="Do I have to use voice?" a="No. Voice is optional. Everything works by typing, and the sliders run the same engine without any AI at all." />
       </section>
 
